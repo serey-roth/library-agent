@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+
+# Poetry
+poetry.lock
+
+# OS
+.DS_Store
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
