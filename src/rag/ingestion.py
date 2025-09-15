@@ -43,12 +43,15 @@ def load_books(driver: GraphDatabase.driver):
         isbn = str(row.get('isbn', '')).strip() if 'isbn' in row else ''
         bib_num = str(row.get('bib_num', '')).strip() if 'bib_num' in row else ''
         locations = str(row.get('locations', '')).strip() if 'locations' in row else ''
+        page_count = str(row.get('page_count', '')).strip() if 'page_count' in row else ''
+        info_url = str(row.get('info_url', '')).strip() if 'info_url' in row else ''
+        thumbnail_url = str(row.get('thumbnail_url', '')).strip() if 'thumbnail_url' in row else ''
         if (not title) or (not subtitle) or (not isbn) or (not locations):
             continue
         
         driver.execute_query("""
-            MERGE (b:Book {title: $title, subtitle: $subtitle, norm_desc: $norm_desc, categories: $categories, authors: $authors, publisher: $publisher, published_date: $published_date, isbn: $isbn, locations: $locations, bib_num: $bib_num})
-            """, title=title, subtitle=subtitle, norm_desc=norm_desc, categories=categories, authors=authors, publisher=publisher, published_date=published_date, isbn=isbn, locations=locations, bib_num=bib_num)
+            MERGE (b:Book {title: $title, subtitle: $subtitle, norm_desc: $norm_desc, categories: $categories, authors: $authors, publisher: $publisher, published_date: $published_date, isbn: $isbn, locations: $locations, bib_num: $bib_num, page_count: $page_count, info_url: $info_url, thumbnail_url: $thumbnail_url})
+            """, title=title, subtitle=subtitle, norm_desc=norm_desc, categories=categories, authors=authors, publisher=publisher, published_date=published_date, isbn=isbn, locations=locations, bib_num=bib_num, page_count=page_count, info_url=info_url, thumbnail_url=thumbnail_url)
         
         locations = locations.split(",")
         for location in locations:

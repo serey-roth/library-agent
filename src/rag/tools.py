@@ -45,7 +45,10 @@ def create_search_books_tool(graph: LangchainNeo4jGraph, vectorstore: Neo4jVecto
         if len(location_codes) > 0:
             where_conditions.append("lower(l.code) IN $location_codes") 
         
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        if where_conditions:
+            where_clause = " AND ".join(where_conditions)
+        else:
+            where_clause = ""
 
         cypher_match = "MATCH (b:Book)"
         if author:
@@ -57,7 +60,7 @@ def create_search_books_tool(graph: LangchainNeo4jGraph, vectorstore: Neo4jVecto
         if len(location_codes) > 0:
             cypher_match += "\nMATCH (b)-[:LOCATED_IN]->(l:Location)"
             
-        cypher_return = f"RETURN DISTINCT b.title as title, b.subtitle as subtitle, b.isbn as isbn, b.published_date as published_date, b.norm_desc as description, b.authors as authors, b.categories as categories, b.publisher as publisher, b.locations as locations"
+        cypher_return = f"RETURN DISTINCT b.title as title, b.subtitle as subtitle, b.isbn as isbn, b.published_date as published_date, b.norm_desc as description, b.authors as authors, b.categories as categories, b.publisher as publisher, b.locations as locations, b.page_count as page_count, b.info_url as info_url, b.thumbnail_url as thumbnail_url"
         
         order_by = "ORDER BY"
         if description:
@@ -66,8 +69,7 @@ def create_search_books_tool(graph: LangchainNeo4jGraph, vectorstore: Neo4jVecto
             order_by += " b.title ASC"
             
         cypher_query = f"""
-            {cypher_match}
-            WHERE {where_clause}
+            {cypher_match}{"\nWHERE " + where_clause + "\n" if where_clause else ""}
             {cypher_return}
             {order_by}
             LIMIT $limit
