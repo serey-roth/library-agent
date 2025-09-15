@@ -1,7 +1,4 @@
 import uuid
-import time
-import os
-from dotenv import load_dotenv
 
 from neo4j import GraphDatabase
 
@@ -19,7 +16,8 @@ import streamlit as st
 from rag.tools import create_search_books_tool
 from rag.prompts import SYSTEM_PROMPT
 from logger import logger
-from rag.ingestion import check_books_exist, load_locations, load_authors, load_books
+from rag.ingestion import load_locations, load_authors, load_books, check_books_exist
+
 
 logger.debug("Starting application")
 logger.debug("Loading secrets")
@@ -32,9 +30,11 @@ try:
 except KeyError:
     logger.error("Database configuration missing - one or more secrets failed to load")
     
+    
 if not NEO4J_URI or not NEO4J_USERNAME or not NEO4J_PASSWORD:
     st.error("❌ Database configuration missing. Please check your environment variables.")
     st.stop()
+
 
 def show_status(message: str, type: str = "info"):
     if type == "success":
@@ -44,36 +44,55 @@ def show_status(message: str, type: str = "info"):
     else:
         st.markdown(f'<div class="status-container"><div class="loading-text">ℹ️ {message}</div></div>', unsafe_allow_html=True)
 
+
 def ingest_data_with_progress(driver: GraphDatabase.driver):
     try:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         logger.debug("Loading library branches...")
+        status_text.text("🔄 Loading library branches...")
+        progress_bar.progress(0.1)
         load_locations(driver)
-        time.sleep(0.2)
         
         logger.debug("Loading authors...")
+        status_text.text("🔄 Loading authors...")
+        progress_bar.progress(0.35)
         load_authors(driver)
-        time.sleep(0.2)
         
         logger.debug("Loading books...")
+        status_text.text("🔄 Loading books...")
+        progress_bar.progress(0.6)
         load_books(driver)
-        time.sleep(0.2)
         
         logger.debug("Finalizing collection...")
-        time.sleep(0.3)
+        status_text.text("🔄 Finalizing collection...")
+        progress_bar.progress(0.85)
+        
+        status_text.text("✅ Data ingestion completed!")
+        progress_bar.progress(1.0)
+        
+        progress_bar.empty()
+        status_text.empty()
         
         logger.debug("Data ingestion completed successfully")
         return True
         
     except Exception as e:
-        logger.error("Data ingestion failed", e)
+        logger.error(f"Data ingestion failed: {str(e)}")
+        if 'progress_bar' in locals() and 'status_text' in locals():
+            status_text.text(f"❌ Setup failed: {str(e)}")
+            progress_bar.progress(1.0)
         show_status(f"Setup failed: {str(e)}", "error")
         raise
+    
 
-@st.cache_resource(show_spinner="Initializing AI assistant...")
+@st.cache_resource
 def initialize_system() -> tuple[CompiledStateGraph, RunnableConfig, GraphDatabase.driver]:
     try:
-        driver = GraphDatabase.driver(uri=NEO4J_URI, auth=NEO4J_AUTH)
-           
+        with st.spinner("🔗 Connecting to database..."):
+            driver = GraphDatabase.driver(uri=NEO4J_URI, auth=NEO4J_AUTH)
+        
         needs_ingestion = not check_books_exist(driver)
         if needs_ingestion:
             logger.debug("Starting data ingestion...")
@@ -81,48 +100,50 @@ def initialize_system() -> tuple[CompiledStateGraph, RunnableConfig, GraphDataba
         else:
             logger.debug("Data already exists - skipping data ingestion")
         
-        logger.debug("Creating graph...")
-        graph = LangchainNeo4jGraph(
-            url=NEO4J_URI,
-            username=NEO4J_USERNAME,
-            password=NEO4J_PASSWORD,
-            refresh_schema=False,
-        )
-    
-        logger.debug("Creating embeddings...")
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        with st.spinner("🧠 Initializing AI assistant..."):
+            logger.debug("Creating graph...")
+            graph = LangchainNeo4jGraph(
+                url=NEO4J_URI,
+                username=NEO4J_USERNAME,
+                password=NEO4J_PASSWORD,
+                refresh_schema=False,
+            )
         
-        logger.debug("Creating vectorstore...")
-        vectorstore = Neo4jVector.from_existing_graph(
-            embedding=embeddings,
-            node_label="Book",
-            embedding_node_property="embedding",
-            text_node_properties=["norm_desc"],
-            url=NEO4J_URI,
-            username=NEO4J_USERNAME,
-            password=NEO4J_PASSWORD,
-        )
-    
-        logger.debug("Creating agent...")
-        llm = ChatOpenAI(model="gpt-4o-mini")
-        tools = [create_search_books_tool(graph, vectorstore, embeddings)]
-        agent = create_react_agent(
-            model=llm, 
-            tools=tools, 
-            prompt=SYSTEM_PROMPT, 
-            checkpointer=InMemorySaver()
-        )
-        thread_id = str(uuid.uuid4())
-        config = RunnableConfig(configurable={"thread_id": thread_id})
+            logger.debug("Creating embeddings...")
+            embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+            
+            logger.debug("Creating vectorstore...")
+            vectorstore = Neo4jVector.from_existing_graph(
+                embedding=embeddings,
+                node_label="Book",
+                embedding_node_property="embedding",
+                text_node_properties=["norm_desc"],
+                url=NEO4J_URI,
+                username=NEO4J_USERNAME,
+                password=NEO4J_PASSWORD,
+            )
+        
+            logger.debug("Creating agent...")
+            llm = ChatOpenAI(model="gpt-4o-mini")
+            tools = [create_search_books_tool(graph, vectorstore, embeddings)]
+            agent = create_react_agent(
+                model=llm, 
+                tools=tools, 
+                prompt=SYSTEM_PROMPT, 
+                checkpointer=InMemorySaver()
+            )
+            thread_id = str(uuid.uuid4())
+            config = RunnableConfig(configurable={"thread_id": thread_id})
         
         logger.debug("AI system initialized")
         
         return agent, config, driver
         
     except Exception as e:
-        logger.error("System initialization failed", e)
+        logger.error(f"System initialization failed: {str(e)}")
         show_status(f"Initialization failed: {str(e)}", "error")
         st.stop()
+
 
 def chat_with_agent(message: str, agent, config):   
     logger.debug(f"User query: {message}")
@@ -142,8 +163,9 @@ def chat_with_agent(message: str, agent, config):
         for response in _gather_agent_responses():
             yield response
     except Exception as e:
-        logger.error("Chat with agent failed", e)
+        logger.error(f"Chat with agent failed: {str(e)}")
         yield f"Sorry, I encountered an error: {str(e)}"
+        
         
 SAMPLE_USER_PROMPTS = [
     "Find gothic fiction books",
@@ -151,6 +173,7 @@ SAMPLE_USER_PROMPTS = [
     "Books by Stephen King?",
     "Recommend a good romance novel"
 ]
+
 
 def main():
     st.markdown('<h1 class="main-header">Seattle Public Library AI Assistant</h1>', unsafe_allow_html=True)
