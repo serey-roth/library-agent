@@ -4,8 +4,6 @@ import time
 from dotenv import load_dotenv
 
 from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError
-import asyncio
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.runnables import RunnableConfig
