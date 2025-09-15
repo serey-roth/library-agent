@@ -36,16 +36,6 @@ if not NEO4J_URI or not NEO4J_USERNAME or not NEO4J_PASSWORD:
     st.error("❌ Database configuration missing. Please check your environment variables.")
     st.stop()
 
-def show_loading_state(message: str, progress: float = None):
-    with st.container():
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            st.spinner()
-        with col2:
-            st.markdown(f'<div class="loading-text">{message}</div>', unsafe_allow_html=True)
-        if progress is not None:
-            st.progress(progress)
-
 def show_status(message: str, type: str = "info"):
     if type == "success":
         st.markdown(f'<div class="status-container"><div class="success-text">✅ {message}</div></div>', unsafe_allow_html=True)
@@ -57,22 +47,18 @@ def show_status(message: str, type: str = "info"):
 def ingest_data_with_progress(driver: GraphDatabase.driver):
     try:
         logger.debug("Loading library branches...")
-        show_loading_state("Loading library branches...", 0.1)
         load_locations(driver)
         time.sleep(0.2)
         
         logger.debug("Loading authors...")
-        show_loading_state("Loading authors...", 0.3)
         load_authors(driver)
         time.sleep(0.2)
         
         logger.debug("Loading books...")
-        show_loading_state("Loading books...", 0.6)
         load_books(driver)
         time.sleep(0.2)
         
         logger.debug("Finalizing collection...")
-        show_loading_state("Finalizing collection...", 0.9)
         time.sleep(0.3)
         
         logger.debug("Data ingestion completed successfully")
