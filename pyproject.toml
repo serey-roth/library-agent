@@ -4,15 +4,20 @@ version = "0.1.0"
 description = "A Python project using Haystack for document processing and search"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
-packages = [{include = "library_agent", from = "src"}]
+packages = [
+    {include = "rag", from = "src"},
+    {include = "data", from = "src"}
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-haystack-ai = "^2.0.0"
 python-dotenv = "^1.1.1"
 pandas = "^2.3.2"
-openpyxl = "^3.1.5"
-gradio = "^5.45.0"
+neo4j = "^5.28.2"
+langgraph = "^0.6.7"
+langchain-openai = "^0.3.33"
+langchain-community = "^0.3.29"
+streamlit = "^1.49.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
