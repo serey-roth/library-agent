@@ -1,6 +1,6 @@
-import os
 import uuid
 import time
+import os
 from dotenv import load_dotenv
 
 from neo4j import GraphDatabase
@@ -18,22 +18,23 @@ import streamlit as st
 
 from rag.tools import create_search_books_tool
 from rag.prompts import SYSTEM_PROMPT
-
+from logger import logger
 from rag.ingestion import check_books_exist, load_locations, load_authors, load_books
 
-load_dotenv()
-
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USER = os.getenv("NEO4J_USER")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-if not NEO4J_URI or not NEO4J_USER or not NEO4J_PASSWORD:
+logger.debug("Starting application")
+logger.debug("Loading secrets")
+try:
+    NEO4J_URI = st.secrets["NEO4J_URI"]
+    NEO4J_USERNAME = st.secrets["NEO4J_USERNAME"]
+    NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
+    NEO4J_AUTH = (NEO4J_USERNAME, NEO4J_PASSWORD)
+    logger.debug("Database configuration loaded")
+except KeyError:
+    logger.error("Database configuration missing - one or more secrets failed to load")
+    
+if not NEO4J_URI or not NEO4J_USERNAME or not NEO4J_PASSWORD:
     st.error("❌ Database configuration missing. Please check your environment variables.")
     st.stop()
-
-NEO4J_AUTH = (NEO4J_USER, NEO4J_PASSWORD)
-
-thread_id = str(uuid.uuid4())
 
 def show_loading_state(message: str, progress: float = None):
     with st.container():
@@ -55,74 +56,91 @@ def show_status(message: str, type: str = "info"):
 
 def ingest_data_with_progress(driver: GraphDatabase.driver):
     try:
+        logger.debug("Loading library branches...")
         show_loading_state("Loading library branches...", 0.1)
         load_locations(driver)
         time.sleep(0.2)
         
+        logger.debug("Loading authors...")
         show_loading_state("Loading authors...", 0.3)
         load_authors(driver)
         time.sleep(0.2)
         
+        logger.debug("Loading books...")
         show_loading_state("Loading books...", 0.6)
         load_books(driver)
         time.sleep(0.2)
         
+        logger.debug("Finalizing collection...")
         show_loading_state("Finalizing collection...", 0.9)
         time.sleep(0.3)
         
+        logger.debug("Data ingestion completed successfully")
         return True
         
     except Exception as e:
+        logger.error("Data ingestion failed", e)
         show_status(f"Setup failed: {str(e)}", "error")
         raise
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Initializing AI assistant...")
 def initialize_system() -> tuple[CompiledStateGraph, RunnableConfig, GraphDatabase.driver]:
     try:
-        with st.spinner("Connecting to database..."):
-            driver = GraphDatabase.driver(uri=NEO4J_URI, auth=NEO4J_AUTH)
-            
+        driver = GraphDatabase.driver(uri=NEO4J_URI, auth=NEO4J_AUTH)
+           
         needs_ingestion = not check_books_exist(driver)
         if needs_ingestion:
-            with st.spinner("Setting up library collection..."):
-                ingest_data_with_progress(driver)
+            logger.debug("Starting data ingestion...")
+            ingest_data_with_progress(driver)
+        else:
+            logger.debug("Data already exists - skipping data ingestion")
         
-        with st.spinner("Initializing AI assistant..."):
-            graph = LangchainNeo4jGraph(
-                url=NEO4J_URI,
-                username=NEO4J_USER,
-                password=NEO4J_PASSWORD,
-                refresh_schema=False,
-            )
+        logger.debug("Creating graph...")
+        graph = LangchainNeo4jGraph(
+            url=NEO4J_URI,
+            username=NEO4J_USERNAME,
+            password=NEO4J_PASSWORD,
+            refresh_schema=False,
+        )
+    
+        logger.debug("Creating embeddings...")
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
         
-            embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-            vectorstore = Neo4jVector.from_existing_graph(
-                embedding=embeddings,
-                node_label="Book",
-                embedding_node_property="embedding",
-                text_node_properties=["norm_desc"],
-                url=NEO4J_URI,
-                username=NEO4J_USER,
-                password=NEO4J_PASSWORD,
-            )
+        logger.debug("Creating vectorstore...")
+        vectorstore = Neo4jVector.from_existing_graph(
+            embedding=embeddings,
+            node_label="Book",
+            embedding_node_property="embedding",
+            text_node_properties=["norm_desc"],
+            url=NEO4J_URI,
+            username=NEO4J_USERNAME,
+            password=NEO4J_PASSWORD,
+        )
+    
+        logger.debug("Creating agent...")
+        llm = ChatOpenAI(model="gpt-4o-mini")
+        tools = [create_search_books_tool(graph, vectorstore, embeddings)]
+        agent = create_react_agent(
+            model=llm, 
+            tools=tools, 
+            prompt=SYSTEM_PROMPT, 
+            checkpointer=InMemorySaver()
+        )
+        thread_id = str(uuid.uuid4())
+        config = RunnableConfig(configurable={"thread_id": thread_id})
         
-            llm = ChatOpenAI(model="gpt-4o-mini")
-            tools = [create_search_books_tool(graph, vectorstore, embeddings)]
-            agent = create_react_agent(
-                model=llm, 
-                tools=tools, 
-                prompt=SYSTEM_PROMPT, 
-                checkpointer=InMemorySaver()
-            )
-            config = RunnableConfig(configurable={"thread_id": thread_id})
+        logger.debug("AI system initialized")
         
         return agent, config, driver
         
     except Exception as e:
+        logger.error("System initialization failed", e)
         show_status(f"Initialization failed: {str(e)}", "error")
         st.stop()
 
 def chat_with_agent(message: str, agent, config):   
+    logger.debug(f"User query: {message}")
+    
     def _gather_agent_responses():
         responses = []
         for msg, metadata in agent.stream({"messages": [{
@@ -134,8 +152,12 @@ def chat_with_agent(message: str, agent, config):
                 responses.append(msg.content)
         return responses
     
-    for response in _gather_agent_responses():
-        yield response
+    try:
+        for response in _gather_agent_responses():
+            yield response
+    except Exception as e:
+        logger.error("Chat with agent failed", e)
+        yield f"Sorry, I encountered an error: {str(e)}"
         
 SAMPLE_USER_PROMPTS = [
     "Find gothic fiction books",
@@ -147,11 +169,7 @@ SAMPLE_USER_PROMPTS = [
 def main():
     st.markdown('<h1 class="main-header">Seattle Public Library AI Assistant</h1>', unsafe_allow_html=True)
     
-    try:
-        agent, config, driver = initialize_system()
-    except Exception as e:
-        st.error(f"Failed to initialize: {e}")
-        return
+    agent, config, driver = initialize_system()
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
