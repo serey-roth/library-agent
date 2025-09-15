@@ -168,14 +168,22 @@ def chat_with_agent(message: str, agent, config):
         
         
 SAMPLE_USER_PROMPTS = [
-    "Find gothic fiction books",
+    "Find some gothic fiction novels",
     "What can I find at Queen Anne?",
-    "Books by Stephen King?",
-    "Recommend a good romance novel"
+    "Recommend a good romance novel",
+    "Find some romance novels at Queen Anne"
 ]
 
 
 def main():
+    # Experimental demo banner
+    st.markdown("""
+    <div style="background-color: #ff6b6b; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center;">
+        <strong>⚠️ EXPERIMENTAL DEMO</strong><br>
+        This demo project is not affiliated with Seattle Public Library.
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown('<h1 class="main-header">Seattle Public Library AI Assistant</h1>', unsafe_allow_html=True)
     
     agent, config, driver = initialize_system()

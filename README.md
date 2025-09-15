@@ -4,10 +4,11 @@ An agentic Retrieval-Augmented Generation (RAG) assistant that helps users explo
 
 Built with Streamlit, Neo4j, and LangChain.
 
+⚠️ **EXPERIMENTAL DEMO** - This demo project is not affiliated with Seattle Public Library.
+
 ## ✨ Features
 
 - 🔎 **Smart Book Search** – Vector-based semantic search through book descriptions
-- 📍 **Branch-Specific Queries** – Find books available at particular library locations
 - 👤 **Author Search** – Discover books by specific authors
 - 📚 **Genre Recommendations** – Get suggestions based on categories and subjects
 - 💬 **Conversational Interface** – Chat naturally with the AI assistant
